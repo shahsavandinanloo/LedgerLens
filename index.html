@@ -19,99 +19,93 @@
 import pandas as pd
 import streamlit as st
 
-# تعریف ستون‌ها به صورت متغیر برای جلوگیری از تداخل RTL
-C_DATE = "تاریخ"
-C_DESC = "توضیحات کاربر"
-C_INC = "واریز (ریال)"
-C_EXP = "برداشت (ریال)"
+# تعریف ثابت‌ها برای جلوگیری از تداخل RTL
+D_COL = "تاریخ"
+I_COL = "واریز (ریال)"
+E_COL = "برداشت (ریال)"
+DESC_COL = "توضیحات کاربر"
 
 def clean_data(file):
     try:
         df = pd.read_excel(file, header=3)
-        df = df.dropna(subset=[C_DATE], how='all')
+        df = df.dropna(subset=[D_COL], how='all')
         
-        # اصلاح تاریخ بدون استفاده از کاراکتر فارسی در بدنه تابع
-        def _parse_date(x):
-            return str(x).split(' ')0.replace('-', '/')
+        # اصلاح تاریخ با روش ایمن
+        def _fix_dt(val):
+            s_val = str(val)
+            parts = s_val.split(' ')
+            first_part = parts0 # اصلاح خطای قبلی
+            return first_part.replace('-', '/')
         
-        df[C_DATE] = df[C_DATE].apply(_parse_date)
+        df[D_COL] = df[D_COL].apply(_fix_dt)
         
-        # تمیز کردن مبالغ
-        for col in [C_INC, C_EXP]:
-            df[col] = df[col].apply(lambda x: int(str(x).replace(',', '').strip()) if pd.notna(x) and str(x) != '-' else 0)
+        # پاکسازی مبالغ
+        for c in [I_COL, E_COL]:
+            df[c] = df[c].apply(lambda x: int(str(x).replace(',', '').strip()) if pd.notna(x) and str(x) != '-' else 0)
         
-        # شکستن تگ‌ها
-        tags = df[C_DESC].str.strip('/').str.split('/', expand=True).iloc[:, :5]
+        # تجزیه تگ‌ها
+        tags = df[DESC_COL].str.strip('/').str.split('/', expand=True).iloc[:, :5]
         tags.columns = ['Mahiyat', 'Center', 'Class', 'Detail', 'Extra']
         df = pd.concat([df, tags.fillna('-')], axis=1)
         
-        df['Center'] = df['Center'].str.strip()
-        return df.sort_values(C_DATE)
+        return df.sort_values(D_COL)
     except Exception as e:
-        st.error(f"Error in Processing: {e}")
+        st.error(f"Logic Error: {e}")
         return None
 
-def detect_anomalies(df):
-    """نوآوری: شناسایی مخارج مشکوک (بیش از ۲ برابر انحراف معیار)"""
-    exp_df = df[df[C_EXP] > 0]
-    if exp_df.empty: return pd.DataFrame()
-    threshold = exp_df[C_EXP].mean() + (2 * exp_df[C_EXP].std())
-    return exp_df[exp_df[C_EXP] > threshold]
+def get_summary(df):
+    """نوآوری: تحلیل سریع وضعیت نقدینگی"""
+    total_i = df[I_COL].sum()
+    total_e = df[E_COL].sum()
+    net = total_i - total_e
+    return total_i, total_e, net
 `,
                 "app.py": `
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from logic import clean_data, detect_anomalies
+from logic import clean_data, get_summary
 
-# تنظیمات اصلی
-st.set_page_config(page_title="LedgerLens Pro", layout="wide")
+st.set_page_config(page_title="LedgerLens", layout="wide")
 
-# تزریق CSS برای ظاهر موبایل و فونت فارسی
+# استایل اختصاصی برای موبایل
 st.markdown("""
 <style>
     @import url('https://v1.fontapi.ir/css/Vazir');
     * { direction: rtl; font-family: 'Vazir', sans-serif; }
-    .kpi-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); text-align: center; border-right: 5px solid #0068c9; margin-bottom: 10px; }
+    .metric-card { background: white; padding: 15px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); text-align: center; border-right: 5px solid #0068c9; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💎 LedgerLens AI Pro")
+st.title("💎 LedgerLens AI")
 
-f = st.file_uploader("📂 فایل اکسل را انتخاب کنید", type=['xlsx'])
+f = st.file_uploader("📂 انتخاب اکسل تراکنش‌ها", type=['xlsx'])
 
 if f:
     df = clean_data(f)
     if df is not None:
-        # محاسبات شاخص‌ها
-        total_inc = df["واریز (ریال)"].sum()
-        total_exp = df["برداشت (ریال)"].sum()
-        balance = total_inc - total_exp
-
+        ti, te, net = get_summary(df)
+        
         # نمایش کارت‌های شاخص
         c1, c2, c3 = st.columns(3)
-        with c1: st.markdown(f'<div class="kpi-card" style="border-color:#2ecc71;">درآمد<br><b>{total_inc:,.0f}</b></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="kpi-card" style="border-color:#e74c3c;">هزینه<br><b>{total_exp:,.0f}</b></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="kpi-card" style="border-color:#3498db;">تراز<br><b>{balance:,.0f}</b></div>', unsafe_allow_html=True)
-
+        with c1: st.markdown(f'<div class="metric-card" style="border-color:#2ecc71;">درآمد کل<br><b>{ti:,.0f}</b></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="metric-card" style="border-color:#e74c3c;">هزینه کل<br><b>{te:,.0f}</b></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="metric-card" style="border-color:#3498db;">تراز نهایی<br><b>{net:,.0f}</b></div>', unsafe_allow_html=True)
+        
         st.divider()
-
-        # نوآوری: بخش تحلیل هوشمند ناهنجاری
-        anomalies = detect_anomalies(df)
-        if not anomalies.empty:
-            with st.expander("🚨 هشدار ناهنجاری در مخارج"):
-                st.warning(f"سیستم {len(anomalies)} تراکنش غیرعادی شناسایی کرد.")
-                st.dataframe(anomalies[["تاریخ", "Class", "Detail", "برداشت (ریال)"]].style.format("{:,.0f}"))
-
-        # تب‌های نمایش داده
-        t1, t2 = st.tabs(["📊 توزیع مخارج", "📋 لیست کل"])
-        with t1:
-            fig = px.pie(df[df["برداشت (ریال)"]>0], names='Center', values='برداشت (ریال)', hole=0.4)
-            st.plotly_chart(fig, use_container_width=True)
-        with t2:
+        
+        # تب‌های نمایش
+        tab1, tab2 = st.tabs(["📊 نمودار مخارج", "📋 لیست کل"])
+        with tab1:
+            if te > 0:
+                fig = px.pie(df[df["برداشت (ریال)"]>0], names='Class', values='برداشت (ریال)', hole=0.4)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.write("داده‌ای برای نمایش هزینه وجود ندارد.")
+        with tab2:
             st.dataframe(df.style.format("{:,.0f}"), use_container_width=True)
 else:
-    st.info("👋 حاجی خوش آمدی! فایل اکسل را آپلود کن تا تحلیل هوشمند شروع شود.")
+    st.info("حاجی خوش آمدی! لطفاً فایل اکسل بانکی رو آپلود کن.")
 `
             },
             entrypoint: "app.py"
