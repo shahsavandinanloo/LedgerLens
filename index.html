@@ -14,12 +14,12 @@
     </style>
 </head>
 <body>
-    <div id="loading-screen"><div class="spinner"></div><p style="font-family: sans-serif; margin-top: 15px;">در حال بارگذاری هوشمند...</p></div>
+    <div id="loading-screen"><div class="spinner"></div><p style="font-family: sans-serif; margin-top: 15px;">در حال آماده‌سازی هوشمند...</p></div>
     <div id="root"></div>
     <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.39.0/build/stlite.js"></script>
     <script>
         stlite.mount({
-            requirements: ["pandas", "plotly", "openpyxl", "pyarrow"], // اضافه شدن pyarrow برای حل ارور
+            requirements: ["pandas", "plotly", "openpyxl", "pyarrow"], 
             files: {
                 "logic.py": `
 import pandas as pd
@@ -29,27 +29,22 @@ def clean_data(file):
     try:
         df = pd.read_excel(file, header=3)
         cols = df.columns.tolist()
-        
-        # شناسایی ستون‌ها بر اساس موقعیت (ایمن‌ترین روش برای موبایل)
         c_date, c_inc, c_exp, c_desc = cols0, cols2, cols3, cols4
         
         df = df.dropna(subset=[c_date])
-        
-        # اصلاح تاریخ و مبالغ
         df[c_date] = df[c_date].apply(lambda x: str(x).split()0.replace('-', '/'))
+        
         for c in [c_inc, c_exp]:
             df[c] = df[c].apply(lambda x: int(str(x).replace(',', '').strip()) if pd.notna(x) and str(x) != '-' else 0)
         
-        # شکستن تگ‌ها
         tags = df[c_desc].str.strip("/").str.split("/", expand=True).iloc[:, :5]
         tags.columns = ["Nature", "Center", "Class", "Detail", "Extra"]
         df = pd.concat([df, tags.fillna("-")], axis=1)
         
-        # ستون‌های کمکی برای محاسبات
         df["_D"], df["_I"], df["_E"] = df[c_date], df[c_inc], df[c_exp]
         return df.sort_values("_D")
     except Exception as e:
-        st.error(f"خطا در پردازش فایل: {e}")
+        st.error(f"خطا در پردازش: {e}")
         return None
 `,
                 "app.py": `
@@ -72,8 +67,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# پنهان کردن لودینگ بعد از اجرا
-st.components.v1.html("<script>window.parent.document.getElementById('loading-screen').style.display='none';</script>", height=0)
+# روش جدید و ایمن برای پنهان کردن لودینگ بدون تداخل با تگ Script
+st.components.v1.html("<img src='x' onerror='window.parent.document.getElementById(\\"loading-screen\\").style.display=\\"none\\"'>", height=0)
 
 st.title("💎 LedgerLens AI")
 
@@ -85,24 +80,18 @@ if f:
         ti, te = df["_I"].sum(), df["_E"].sum()
         
         c1, c2, c3 = st.columns(3)
-        with c1: st.markdown(f'<div class="kpi-card" style="border-color:#2ecc71;">درآمد<br><b>{ti:,.0f}</b></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="kpi-card" style="border-color:#e74c3c;">هزینه<br><b>{te:,.0f}</b></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="kpi-card" style="border-color:#3498db;">تراز<br><b>{ti-te:,.0f}</b></div>', unsafe_allow_html=True)
+        with c1: st.markdown(f'<div class="kpi-card" style="border-color:#2ecc71;">درآمد کل<br><b>{ti:,.0f}</b></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="kpi-card" style="border-color:#e74c3c;">هزینه کل<br><b>{te:,.0f}</b></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="kpi-card" style="border-color:#3498db;">تراز نهایی<br><b>{ti-te:,.0f}</b></div>', unsafe_allow_html=True)
 
-        t1, t2 = st.tabs(["📊 توزیع مخارج", "📋 لیست تراکنش‌ها"])
+        t1, t2 = st.tabs(["📊 تحلیل مخارج", "📋 لیست کل"])
         
         with t1:
-            # --- حل ریشه‌ای ارور pyarrow ---
-            # داده‌ها را ابتدا خلاصه می‌کنیم و به لیست تبدیل می‌کنیم تا پایتون کراش نکند
             exp_df = df[df["_E"] > 0]
             if not exp_df.empty:
                 summary = exp_df.groupby("Class")["_E"].sum().reset_index()
-                # تبدیل به لیست برای بای‌پس کردن موتور Arrow
-                labels = summary["Class"].tolist()
-                values = summary["_E"].tolist()
-                
-                fig = px.pie(names=labels, values=values, hole=0.4, 
-                             color_discrete_sequence=px.colors.qualitative.Safe)
+                # تبدیل داده به لیست برای جلوگیری از ارور Pyarrow در مرورگر
+                fig = px.pie(names=summary["Class"].tolist(), values=summary["_E"].tolist(), hole=0.4)
                 fig.update_layout(margin=dict(t=0, b=0, l=0, r=0))
                 st.plotly_chart(fig, use_container_width=True)
             else:
@@ -111,7 +100,7 @@ if f:
         with t2:
             st.dataframe(df[["_D", "Class", "Detail", "_I", "_E"]].style.format("{:,.0f}"), use_container_width=True)
 else:
-    st.info("👋 حاجی خوش آمدی! اکسل بانکی را آپلود کن.")
+    st.info("👋 حاجی خوش آمدی! اکسل تراکنش‌ها رو آپلود کن.")
 `
             },
             entrypoint: "app.py"
