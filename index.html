@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>LedgerLens Pro | Mobile Edition</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.39.0/build/stlite.css" />
+</head>
+<body>
+    <div id="root"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.39.0/build/stlite.js"></script>
+    <script>
+        stlite.mount({
+            requirements: ["pandas", "plotly", "openpyxl"], 
+            files: {
+                // --- فایل منطق محاسباتی ---
+                "logic.py": `
+import pandas as pd
+import streamlit as st
+
+def clean_data(file):
+    df = pd.read_excel(file, header=3)
+    df = df.dropna(subset=['تاریخ'], how='all')
+    df['تاریخ'] = df['تاریخ'].apply(lambda x: str(x).split(' ')0.replace('-', '/'))
+    for col in ['واریز (ریال)', 'برداشت (ریال)']:
+        df[col] = df[col].apply(lambda x: int(str(x).replace(',', '').strip()) if pd.notna(x) and x != '-' else 0)
+    tags = df['توضیحات کاربر'].str.strip('/').str.split('/', expand=True).iloc[:, :5]
+    tags.columns = ['ماهیت', 'مرکز', 'کلاس', 'جزئیات', 'تکمیلی']
+    df = pd.concat([df, tags.fillna('-')], axis=1)
+    df['مرکز'] = df['مرکز'].str.strip()
+    return df.sort_values('تاریخ')
+
+def detect_anomalies(df):
+    exp_df = df[df['برداشت (ریال)'] > 0]
+    if exp_df.empty: return pd.DataFrame()
+    threshold = exp_df['برداشت (ریال)'].mean() + (2 * exp_df['برداشت (ریال)'].std())
+    return exp_df[exp_df['برداشت (ریال)'] > threshold]
+`,
+                // --- فایل ابزارهای بصری ---
+                "visuals.py": `
+import streamlit as st
+import plotly.express as px
+
+def apply_styles():
+    st.markdown("""
+    <style>
+        @import url('https://v1.fontapi.ir/css/Vazir');
+        * { direction: rtl; font-family: 'Vazir', sans-serif; }
+        .kpi-card {
+            background: white; padding: 15px; border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05); text-align: center;
+            border-right: 5px solid #0068c9; margin-bottom: 10px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+def draw_kpi(label, value, color="#0068c9"):
+    st.markdown(f'<div class="kpi-card" style="border-right-color:{color};">{label}<br><b>{value:,.0f}</b></div>', unsafe_allow_html=True)
+`,
+                // --- فایل اصلی اجرا ---
+                "app.py": `
+import streamlit as st
+from logic import clean_data, detect_anomalies
+from visuals import apply_styles, draw_kpi
+import plotly.express as px
+
+apply_styles()
+st.title("💎 LedgerLens Pro")
+
+uploaded_file = st.file_uploader("📂 انتخاب اکسل مالی", type=['xlsx'])
+
+if uploaded_file:
+    df = clean_data(uploaded_file)
+    
+    # KPIs
+    t_inc = df['واریز (ریال)'].sum()
+    t_exp = df['برداشت (ریال)'].sum()
+    c1, c2, c3 = st.columns(3)
+    with c1: draw_kpi("درآمد", t_inc, "#2ecc71")
+    with col2 if 'col2' in locals() else c2: draw_kpi("هزینه", t_exp, "#e74c3c")
+    with col3 if 'col3' in locals() else c3: draw_kpi("تراز", t_inc-t_exp, "#3498db")
+
+    # ناهنجاری‌ها
+    anomalies = detect_anomalies(df)
+    if not anomalies.empty:
+        with st.expander("🚨 مخارج مشکوک"):
+            st.dataframe(anomalies[['تاریخ', 'جزئیات', 'برداشت (ریال)']].style.format("{:,.0f}"))
+
+    # تب‌ها
+    tab1, tab2 = st.tabs(["📊 تحلیل", "📋 لیست کل"])
+    with tab1:
+        st.plotly_chart(px.pie(df, names='مرکز', values='برداشت (ریال)', hole=0.4), use_container_width=True)
+    with tab2:
+        st.dataframe(df.style.format("{:,.0f}"), use_container_width=True)
+`
+            },
+            entrypoint: "app.py"
+        }, document.getElementById("root"));
+    </script>
+</body>
+</html>
